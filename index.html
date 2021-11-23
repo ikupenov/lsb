@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+
+<body>
+  <input id="input__file" type="file" />
+
+  <div>
+    <textarea id="text__source"></textarea>
+  </div>
+
+  <div>
+    <textarea id="text__decoded" readonly></textarea>
+  </div>
+
+  <div>
+    <button id="btn__encode">Encode</button>
+    <button id="btn__decode">Decode</button>
+  </div>
+
+  <div>
+    Source
+  </div>
+
+  <div>
+    <img id="img__source" width="100" />
+  </div>
+
+  <div>
+    Destination
+  </div>
+
+  <div>
+    <img id="img__dest" width="100" />
+  </div>
+
+  <!-- LSB (least significant bit) encoding implementation. -->
+  <script>
+    function stringToBits(string) {
+      return string.split('')
+        .map(char => char.charCodeAt(0))
+        .map(int => (int).toString(2).padStart(8, '0').split(''))
+        .flat()
+        .map(n => +n);
+    }
+
+    function bitsToString(bits) {
+      bits = [...bits.map(n => getBit(n, 0))];
+      return String.fromCharCode(...Array(Math.ceil(bits.length / 8))
+        .fill()
+        .map(() => bits.splice(0, 8))
+        .map(arr => parseInt(arr.join(''), 2)));
+    }
+
+    function setBit(number, bitPosition, sign) {
+      if (sign) return number | (1 << bitPosition);
+      const mask = ~(1 << bitPosition);
+      return number & mask;
+    }
+
+
+    function getBit(number, bitPosition) {
+      return (number & (1 << bitPosition)) === 0 ? 0 : 1;
+    }
+
+    function createWatermark(imageAsBase64, text) {
+      return new Promise(resolve => {
+        const image = new Image();
+        image.src = imageAsBase64;
+        image.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const context = canvas.getContext('2d');
+          context.drawImage(image, 0, 0);
+          const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+          const bits = stringToBits(text);
+          for (let i = 0; i < text.length * 8; i += 4) {
+            imageData.data[i] = setBit(imageData.data[i], 0, bits[i]);
+            imageData.data[i + 1] = setBit(imageData.data[i + 1], 0, bits[i + 1]);
+            imageData.data[i + 2] = setBit(imageData.data[i + 2], 0, bits[i + 2]);
+            imageData.data[i + 3] = setBit(imageData.data[i + 3], 0, bits[i + 3]);
+          }
+          context.putImageData(imageData, 0, 0);
+          resolve(canvas.toDataURL());
+        }
+      });
+    }
+
+    function readWatermark(base64, textLength) {
+      return new Promise(resolve => {
+        const image = new Image();
+        image.src = base64;
+        image.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const context = canvas.getContext('2d');
+          context.drawImage(image, 0, 0);
+          const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+          const bits = imageData.data.slice(0, textLength * 8);
+          resolve(bitsToString(bits));
+        }
+      });
+    }
+  </script>
+
+  <script>
+    const fileInputEl = document.querySelector("#input__file")
+    const sourceImgEl = document.querySelector("#img__source")
+    const destImgEl = document.querySelector("#img__dest")
+
+    const encodeBtnEl = document.querySelector("#btn__encode")
+    const decodeBtnEl = document.querySelector("#btn__decode")
+
+    const sourceTextEl = document.querySelector("#text__source")
+    const decodedTextEl = document.querySelector("#text__decoded")
+
+    async function getBase64(file) {
+      var reader = new FileReader()
+      reader.readAsDataURL(file)
+
+      return new Promise((res, reject) => {
+        reader.onload = function () {
+          res(reader.result)
+        }
+
+        reader.onerror = function (error) {
+          reject(error)
+        }
+      })
+    }
+
+    fileInputEl.addEventListener("change", async (ev) => {
+      const file = fileInputEl.files[0]
+      const base64 = await getBase64(file)
+
+      sourceImgEl.src = base64
+    })
+
+    encodeBtnEl.addEventListener("click", async (ev) => {
+      const watermark = await createWatermark(sourceImgEl.src, sourceTextEl.value)
+      destImgEl.src = watermark
+    })
+
+    decodeBtnEl.addEventListener("click", async (ev) => {
+      const hiddenText = await readWatermark(sourceImgEl.src, 10000)
+      decodedTextEl.value = hiddenText
+    })
+  </script>
+</body>
+
+</html>
